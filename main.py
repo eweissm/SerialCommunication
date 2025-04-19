@@ -89,6 +89,7 @@ class SerialCommunicator:
                 threading.Thread(target=self.write_thread_twoWay, daemon=True).start()
             case 'oneWayFromArduino':
                 threading.Thread(target=self.listen_thread_oneWayFromArduino, daemon=True).start()
+                # threading.Thread(target=self.measureFreq_thread, daemon=True).start()
             case 'OneWay2Arduino':
                 threading.Thread(target=self.write_thread_OneWay2Arduino, daemon=True).start()
 
@@ -151,15 +152,13 @@ class SerialCommunicator:
                     try:
                         floats = [struct.unpack('<f', data_bytes[i * 4:i * 4 + 4])[0]
                                   for i in range(self.n_floats)]
-                        self.data_queue.put(floats)
+                        self.data_queue.put(time.time())
 
                         self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")
                         if self.verbose:
                             print(f"[Listener] Received: {floats}")
                     except struct.error:
                         continue
-
-
 
     def write_thread_OneWay2Arduino(self):
         pass
@@ -181,6 +180,7 @@ if __name__ == "__main__":
 
     try:
         while True:
+            time.sleep(1)
             # Dynamically change data if needed
             communicator.set_data_to_send([1.1, 2.2])
             # communicator.set_listener_ready(True)  # or False
