@@ -90,7 +90,7 @@ class SerialCommunicator:
             case 'OneWay2Arduino':
                 threading.Thread(target=self.write_thread_OneWay2Arduino, daemon=True).start()
 
-    def get_buffer(self):  # 👈 Buffer accessor method
+    def get_buffer(self):  # Buffer accessor method
         return list(self.buffer)
 
     def log_frequency(self, timestamps, label, counter_name):
@@ -205,7 +205,6 @@ if __name__ == "__main__":
             time.sleep(1)
             # Dynamically change data if needed
             communicator.set_data_to_send([1.1, 2.2,3.3,4.4,5.5,6.6,7.7,8.8,9.9])
-            # communicator.set_listener_ready(True)  # or False
 
     except KeyboardInterrupt:
         communicator.stop()
