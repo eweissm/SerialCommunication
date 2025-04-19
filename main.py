@@ -33,6 +33,7 @@ Example:
     communicator.start()
     ...
     communicator.set_data_to_send([0.1, 0.2, ..., 0.9]) # dont call this too often or you will make the CPU sad
+    latest_buffer = communicator.get_buffer()
     ...
     communicator.stop()
 
@@ -45,29 +46,29 @@ import struct
 import threading
 import time
 from collections import deque
-from queue import Queue
 
 
 class SerialCommunicator:
-    def __init__(self, port, baudrate, n_floats_to_arduino=9, n_floats_from_arduino=9, direction = 'TwoWay', verbose=True, logFreq=False):
+    def __init__(self, port, baudrate, n_floats_to_arduino=9, n_floats_from_arduino=9, direction = 'TwoWay', verbose=True, logFreq=False, buffer_size=100):
 
-        self.directionOption = ['TwoWay', 'oneWayFromArduino' , 'OneWay2Arduino']
-        if direction not in self.directionOption:
-            raise Exception(f"Enter a valid direction from: {self.directionOption}")
+        directionOption = ['TwoWay', 'oneWayFromArduino' , 'OneWay2Arduino'] # check to make sure valid direction has been selected
+        if direction not in directionOption:
+            raise Exception(f"Enter a valid direction from: {directionOption}")
 
-        self.direction = direction
+        self.direction = direction #selected direction/ protocal for serial comms
         self.port = port  # COM port for the Arduino
-        self.baudrate = baudrate
-        self.n_floats_to_arduino = n_floats_to_arduino
-        self.n_floats_from_arduino = n_floats_from_arduino
-        self.sync_byte = 0xAA
+        self.baudrate = baudrate # selected baud rate for serial comms. Must match arduino's
+        self.n_floats_to_arduino = n_floats_to_arduino # num floats to send to arduino
+        self.n_floats_from_arduino = n_floats_from_arduino # num floats to received from the arduino
+        self.sync_byte = 0xAA # byte used to sync up binary messages being sent
         self.ser = serial.Serial(self.port, self.baudrate, timeout=0.1)
-        self.running = False
-        self.data_to_send = [0.0] * self.n_floats_to_arduino
-        self.verbose = verbose
-        self.expected_bytes = self.n_floats_from_arduino * 4
-        self.dataQueue = Queue()
-        self.logFreq = logFreq
+
+        self.running = False # state of communication threads
+        self.data_to_send = [0.0] * self.n_floats_to_arduino # message to send to the arduino
+        self.verbose = verbose # option selecting to print sent and received data
+        self.expected_bytes = self.n_floats_from_arduino * 4 # length of message from the arduino
+        self.buffer = deque(maxlen=buffer_size)  # 👈 Constantly updating buffer which will store the received data from the arduino
+        self.logFreq = logFreq # option to measure communication freq
 
         # Deques to store recent timestamps for frequency calculation
         self.send_timestamps = deque(maxlen=500)
@@ -75,8 +76,9 @@ class SerialCommunicator:
         self.send_counter = 0
         self.recv_counter = 0
 
-    def start(self):
-        time.sleep(1)
+    def start(self): #starts communication threads according to selected direction/ protocal
+
+        time.sleep(1) # sleep for stability
         self.running = True
 
         match self.direction:
@@ -88,7 +90,12 @@ class SerialCommunicator:
             case 'OneWay2Arduino':
                 threading.Thread(target=self.write_thread_OneWay2Arduino, daemon=True).start()
 
+    def get_buffer(self):  # 👈 Buffer accessor method
+        return list(self.buffer)
+
     def log_frequency(self, timestamps, label, counter_name):
+        # helper func to record and display the communication frequency
+
         if self.logFreq:
             now = time.time()
             timestamps.append(now)
@@ -101,7 +108,10 @@ class SerialCommunicator:
                 counter = 0
             setattr(self, counter_name, counter)
 
+
     def listen_thread_twoWay(self):
+        # thread to control listening in the two way communication context.
+
         while self.running:
             if self.ser.in_waiting >= 1:  # if we have something to read
 
@@ -113,7 +123,7 @@ class SerialCommunicator:
                     floats = [struct.unpack('<f', data_bytes[i * 4:i * 4 + 4])[0]
                               for i in range(self.n_floats_from_arduino)]
 
-                    self.dataQueue.put(floats) #easy to access data queue
+                    self.buffer.append(floats) #easy to access data queue
 
                     self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")  # measure freq
 
@@ -122,6 +132,8 @@ class SerialCommunicator:
             # self.pythonReady = True
 
     def write_thread_twoWay(self):
+        # thread to control writing in the two way communication context.
+
         while self.running:
 
             # lets buils our message as b'sync byte floats'
@@ -149,7 +161,7 @@ class SerialCommunicator:
                         floats = [struct.unpack('<f', data_bytes[i * 4:i * 4 + 4])[0]
                                   for i in range(self.n_floats_from_arduino)]
 
-                        self.dataQueue.put(floats)  # easy to access data queue
+                        self.buffer.append(floats) #easy to access data queue
 
                         self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")
                         if self.verbose:
