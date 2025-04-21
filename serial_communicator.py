@@ -78,7 +78,7 @@ class SerialCommunicator:
         self.data_to_send = [0.0] * self.n_floats_to_arduino # message to send to the arduino
         self.verbose = verbose # option selecting to print sent and received data
         self.expected_bytes = self.n_floats_from_arduino * 4 # length of message from the arduino
-        self.buffer = deque(maxlen=buffer_size)  # 👈 Constantly updating buffer which will store the received data from the arduino
+        self.buffer = deque(maxlen=buffer_size)  # Constantly updating buffer which will store the received data from the arduino
         self.logFreq = logFreq # option to measure communication freq
         self.data_queue = Queue()
         self.CSVPath = CSVPath
