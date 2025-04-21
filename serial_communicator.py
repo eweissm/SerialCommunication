@@ -46,10 +46,21 @@ import struct
 import threading
 import time
 from collections import deque
+import csv
+from queue import Queue
 
 
 class SerialCommunicator:
-    def __init__(self, port, baudrate, n_floats_to_arduino=9, n_floats_from_arduino=9, direction = 'TwoWay', verbose=True, logFreq=False, buffer_size=100):
+    def __init__(self,
+                 port,
+                 baudrate,
+                 n_floats_to_arduino=9,
+                 n_floats_from_arduino=9,
+                 direction = 'TwoWay',
+                 verbose=True,
+                 logFreq=False,
+                 buffer_size=100,
+                 CSVPath = None):
 
         directionOption = ['TwoWay', 'oneWayFromArduino' , 'OneWay2Arduino'] # check to make sure valid direction has been selected
         if direction not in directionOption:
@@ -62,13 +73,15 @@ class SerialCommunicator:
         self.n_floats_from_arduino = n_floats_from_arduino # num floats to received from the arduino
         self.sync_byte = 0xAA # byte used to sync up binary messages being sent
         self.ser = serial.Serial(self.port, self.baudrate, timeout=0.1)
-
+        self.buffer_size = buffer_size
         self.running = False # state of communication threads
         self.data_to_send = [0.0] * self.n_floats_to_arduino # message to send to the arduino
         self.verbose = verbose # option selecting to print sent and received data
         self.expected_bytes = self.n_floats_from_arduino * 4 # length of message from the arduino
         self.buffer = deque(maxlen=buffer_size)  # 👈 Constantly updating buffer which will store the received data from the arduino
         self.logFreq = logFreq # option to measure communication freq
+        self.data_queue = Queue()
+        self.CSVPath = CSVPath
 
         # Deques to store recent timestamps for frequency calculation
         self.send_timestamps = deque(maxlen=500)
@@ -90,8 +103,28 @@ class SerialCommunicator:
             case 'OneWay2Arduino':
                 threading.Thread(target=self.write_thread_OneWay2Arduino, daemon=True).start()
 
+        if self.CSVPath is not None:
+            threading.Thread(target=self.data_writer, daemon=True).start()
+
     def get_buffer(self):  # Buffer accessor method
         return list(self.buffer)
+
+    def data_writer(self):
+        buffer = []
+
+        with open(self.CSVPath, 'w', newline='') as f:
+            writer = csv.writer(f)
+
+            while self.running:
+                try:
+                    data = self.data_queue.get(timeout=1)
+                    buffer.append(data)
+
+                    if len(buffer) >= self.buffer_size:
+                        writer.writerows(buffer)
+                        buffer.clear()
+                except:
+                    continue
 
     def log_frequency(self, timestamps, label, counter_name):
         # helper func to record and display the communication frequency
@@ -124,6 +157,9 @@ class SerialCommunicator:
                               for i in range(self.n_floats_from_arduino)]
 
                     self.buffer.append(floats) #easy to access data queue
+
+                    if self.CSVPath is not None:
+                        self.data_queue.put(floats)
 
                     self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")  # measure freq
 
@@ -162,6 +198,9 @@ class SerialCommunicator:
                                   for i in range(self.n_floats_from_arduino)]
 
                         self.buffer.append(floats) #easy to access data queue
+
+                        if self.CSVPath is not None:
+                            self.data_queue.put(floats)
 
                         self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")
                         if self.verbose:
