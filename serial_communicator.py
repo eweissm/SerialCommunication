@@ -60,7 +60,8 @@ class SerialCommunicator:
                  verbose=True,
                  logFreq=False,
                  buffer_size=100,
-                 CSVPath = None):
+                 CSVPath = None,
+                 DesiredFreq = 10000):
 
         directionOption = ['TwoWay', 'oneWayFromArduino' , 'OneWay2Arduino'] # check to make sure valid direction has been selected
         if direction not in directionOption:
@@ -82,12 +83,15 @@ class SerialCommunicator:
         self.logFreq = logFreq # option to measure communication freq
         self.data_queue = Queue()
         self.CSVPath = CSVPath
+        self.DesiredFreq = DesiredFreq
 
         # Deques to store recent timestamps for frequency calculation
-        self.send_timestamps = deque(maxlen=500)
-        self.recv_timestamps = deque(maxlen=500)
+        self.send_timestamps = deque(maxlen=100)
+        self.recv_timestamps = deque(maxlen=100)
         self.send_counter = 0
         self.recv_counter = 0
+
+        self._lock = threading.Lock()
 
     def start(self): #starts communication threads according to selected direction/ protocal
 
@@ -115,16 +119,26 @@ class SerialCommunicator:
         with open(self.CSVPath, 'w', newline='') as f:
             writer = csv.writer(f)
 
-            while self.running:
-                try:
-                    data = self.data_queue.get(timeout=1)
-                    buffer.append(data)
+            lastTime = time.perf_counter()
 
-                    if len(buffer) >= self.buffer_size:
-                        writer.writerows(buffer)
-                        buffer.clear()
-                except:
-                    continue
+            while self.running:
+
+                now = time.perf_counter()
+                dt = now - lastTime
+
+                if dt >= 1/self.DesiredFreq:
+                    lastTime=now
+                    try:
+                        data = self.data_queue.get(timeout=1)
+                        buffer.append(data)
+
+                        if len(buffer) >= self.buffer_size:
+                            writer.writerows(buffer)
+                            buffer.clear()
+                    except:
+                        continue
+                else:
+                    time.sleep((1/self.DesiredFreq)/10)
 
     def log_frequency(self, timestamps, label, counter_name):
         # helper func to record and display the communication frequency
@@ -140,7 +154,6 @@ class SerialCommunicator:
                 print(f"[{label}] Avg Frequency (last {len(timestamps)}): {freq:.2f} messages/sec")
                 counter = 0
             setattr(self, counter_name, counter)
-
 
     def listen_thread_twoWay(self):
         # thread to control listening in the two way communication context.
@@ -171,19 +184,19 @@ class SerialCommunicator:
         # thread to control writing in the two way communication context.
 
         while self.running:
+            with self._lock:
+                # lets buils our message as b'sync byte floats'
+                payload = bytearray()
+                payload.append(self.sync_byte)
+                for value in self.data_to_send:
+                    payload.extend(struct.pack('<f', value))
 
-            # lets buils our message as b'sync byte floats'
-            payload = bytearray()
-            payload.append(self.sync_byte)
-            for value in self.data_to_send:
-                payload.extend(struct.pack('<f', value))
+                self.ser.write(payload)  # send message to the arduino
 
-            self.ser.write(payload)  # send message to the arduino
+                self.log_frequency(self.send_timestamps, "Writer", "send_counter")  # measure freq
 
-            self.log_frequency(self.send_timestamps, "Writer", "send_counter")  # measure freq
-
-            if self.verbose:
-                print(f"[Writer] Sent: {self.data_to_send}")
+                if self.verbose:
+                    print(f"[Writer] Sent: {self.data_to_send}")
 
     def listen_thread_oneWayFromArduino(self):
         while self.running:
@@ -209,30 +222,45 @@ class SerialCommunicator:
                         continue
 
     def write_thread_OneWay2Arduino(self):
+
+        lastTime = time.perf_counter()
+
         while self.running:
 
-            # lets builds our message as b'sync byte floats'
-            payload = bytearray()
-            payload.append(self.sync_byte)
-            for value in self.data_to_send:
-                payload.extend(struct.pack('<f', value))
+            now = time.perf_counter()
+            dt = now - lastTime
 
-            self.ser.write(payload)  # send message to the arduino
+            if dt >= 1/self.DesiredFreq:
 
-            self.log_frequency(self.send_timestamps, "Writer", "send_counter")  # measure freq
+                lastTime=now
 
-            if self.verbose:
-                print(f"[Writer] Sent: {self.data_to_send}")
+                with self._lock:
+                    # lets builds our message as b'sync byte floats'
+                    payload = bytearray()
+                    payload.append(self.sync_byte)
+                    for value in self.data_to_send:
+                        payload.extend(struct.pack('<f', value))
+
+                    self.ser.write(payload)  # send message to the arduino
+
+                    self.log_frequency(self.send_timestamps, "Writer", "send_counter")  # measure freq
+
+                    if self.verbose:
+                        print(f"[Writer] Sent: {self.data_to_send}")
+
+            else:
+                    time.sleep((1/self.DesiredFreq)/10)
 
     def stop(self):
         self.running = False
         self.ser.close()
 
     def set_data_to_send(self, new_data):
-        if len(new_data) == self.n_floats_to_arduino:
-            self.data_to_send = new_data
-        else:
-            raise ValueError(f"Expected {self.n_floats_to_arduino} floats")
+        with self._lock:
+            if len(new_data) == self.n_floats_to_arduino:
+                self.data_to_send = new_data
+            else:
+                raise ValueError(f"Expected {self.n_floats_to_arduino} floats")
 
 
 if __name__ == "__main__":
