@@ -150,6 +150,8 @@ void loop() {
 
 -buffer_size: (int)	Size of the rolling buffer for received messages
 
+-CVSPath: (str) Optional input to record data recived from arduino to a csv. You can edit data_writer def to alter what is stored in the csv
+
 # Methods
 - start(): Begin communication threads based on the selected mode.
 
