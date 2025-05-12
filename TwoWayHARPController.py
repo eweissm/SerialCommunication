@@ -17,7 +17,7 @@ communicator = SerialCommunicator(port="COM4",
                                   direction = 'TwoWay',
                                   logFreq=True,
                                   CSVPath = output_file,
-                                  DesiredFreq = 200)
+                                  DesiredFreq = 400)
 communicator.start()
 prevTime = time.time()
 startTime = prevTime
@@ -27,18 +27,19 @@ while True:
 
     now = time.time()
     dt = now- prevTime
-    prevTime = now
+
 
     if dt >= 1/freq:
-
+        prevTime = now
         setP = [20.0]
 
         communicator.set_data_to_send(setP)
         buffer = communicator.get_buffer()
+        # print(buffer)
         if buffer:
-            if buffer[-1][4]> 350 or buffer[-1][4]<50:
+            if buffer[-1][-1]> 350 or buffer[-1][-1]<50:
                  print("Error:check laser limits")
-            print(buffer[-1][2])
+            # print(buffer[-1][2])
     else:
         time.sleep(0.001)
 
