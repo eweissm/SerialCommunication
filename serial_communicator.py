@@ -1,3 +1,4 @@
+
 """
 Serial Communication Interface
 By Eric Weissman
@@ -157,46 +158,65 @@ class SerialCommunicator:
 
     def listen_thread_twoWay(self):
         # thread to control listening in the two way communication context.
+        lastTime = time.perf_counter()
 
         while self.running:
-            if self.ser.in_waiting >= 1:  # if we have something to read
 
-                sync = self.ser.read(1)  # read next byte
-                if sync[0] == self.sync_byte:  # if the next byte is the sync bit
-                    data_bytes = self.ser.read(self.expected_bytes)  # read the expected bytes
+            now = time.perf_counter()
+            dt = now - lastTime
 
-                    # process the data into floats
-                    floats = [struct.unpack('<f', data_bytes[i * 4:i * 4 + 4])[0]
-                              for i in range(self.n_floats_from_arduino)]
+            if dt >= 1 / self.DesiredFreq:
+                lastTime = now
+                if self.ser.in_waiting >= 1:  # if we have something to read
 
-                    self.buffer.append(floats) #easy to access data queue
+                    sync = self.ser.read(1)  # read next byte
+                    if sync[0] == self.sync_byte:  # if the next byte is the sync bit
+                        data_bytes = self.ser.read(self.expected_bytes)  # read the expected bytes
 
-                    if self.CSVPath is not None:
-                        self.data_queue.put(floats)
+                        # process the data into floats
+                        floats = [struct.unpack('<f', data_bytes[i * 4:i * 4 + 4])[0]
+                                  for i in range(self.n_floats_from_arduino)]
 
-                    self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")  # measure freq
+                        self.buffer.append(floats) #easy to access data queue
 
-                    if self.verbose:
-                        print(f"[Listener] Received: {floats}")
+                        if self.CSVPath is not None:
+                            self.data_queue.put(floats)
+
+                        self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")  # measure freq
+
+                        if self.verbose:
+                            print(f"[Listener] Received: {floats}")
+            else:
+                time.sleep((1 / self.DesiredFreq) / 10)
+
             # self.pythonReady = True
 
     def write_thread_twoWay(self):
         # thread to control writing in the two way communication context.
+        lastTime = time.perf_counter()
 
         while self.running:
-            with self._lock:
-                # lets buils our message as b'sync byte floats'
-                payload = bytearray()
-                payload.append(self.sync_byte)
-                for value in self.data_to_send:
-                    payload.extend(struct.pack('<f', value))
 
-                self.ser.write(payload)  # send message to the arduino
+            now = time.perf_counter()
+            dt = now - lastTime
 
-                self.log_frequency(self.send_timestamps, "Writer", "send_counter")  # measure freq
+            if dt >= 1 / self.DesiredFreq:
+                lastTime = now
+                with self._lock:
+                    # lets buils our message as b'sync byte floats'
+                    payload = bytearray()
+                    payload.append(self.sync_byte)
+                    for value in self.data_to_send:
+                        payload.extend(struct.pack('<f', value))
 
-                if self.verbose:
-                    print(f"[Writer] Sent: {self.data_to_send}")
+                    self.ser.write(payload)  # send message to the arduino
+
+                    self.log_frequency(self.send_timestamps, "Writer", "send_counter")  # measure freq
+
+                    if self.verbose:
+                        print(f"[Writer] Sent: {self.data_to_send}")
+            else:
+                time.sleep((1 / self.DesiredFreq) / 10)
 
     def listen_thread_oneWayFromArduino(self):
         while self.running:
