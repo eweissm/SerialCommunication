@@ -166,3 +166,8 @@ void loop() {
 
 # License
 MIT License — free to use and modify.
+
+
+# Known BUGS
+- The freq control for two way comms is busted. Use an arbitrarily high freq to avoid issues (~5000 worked for me)
+- 
