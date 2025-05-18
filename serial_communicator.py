@@ -82,7 +82,7 @@ class SerialCommunicator:
         self.expected_bytes = self.n_floats_from_arduino * 4 # length of message from the arduino
         self.buffer = deque(maxlen=buffer_size)  # Constantly updating buffer which will store the received data from the arduino
         self.logFreq = logFreq # option to measure communication freq
-        self.data_queue = Queue()
+        # self.data_queue = Queue()
         self.CSVPath = CSVPath
         self.DesiredFreq = DesiredFreq
 
@@ -130,12 +130,15 @@ class SerialCommunicator:
                 if dt >= 1/self.DesiredFreq:
                     lastTime=now
                     try:
-                        data = self.data_queue.get(timeout=1)
+                        data =self.buffer[-1]
                         buffer.append(data)
 
                         if len(buffer) >= self.buffer_size:
                             writer.writerows(buffer)
+                            print(len(buffer))
                             buffer.clear()
+
+                            print("Data Written to CSV")
                     except:
                         continue
                 else:
@@ -165,7 +168,7 @@ class SerialCommunicator:
             now = time.perf_counter()
             dt = now - lastTime
 
-            if dt >= 1 / self.DesiredFreq:
+            if dt >= 0:
                 lastTime = now
                 if self.ser.in_waiting >= 1:  # if we have something to read
 
@@ -179,8 +182,8 @@ class SerialCommunicator:
 
                         self.buffer.append(floats) #easy to access data queue
 
-                        if self.CSVPath is not None:
-                            self.data_queue.put(floats)
+                        # if self.CSVPath is not None:
+                        #     self.data_queue.put(floats)
 
                         self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")  # measure freq
 
@@ -232,8 +235,8 @@ class SerialCommunicator:
 
                         self.buffer.append(floats) #easy to access data queue
 
-                        if self.CSVPath is not None:
-                            self.data_queue.put(floats)
+                        # if self.CSVPath is not None:
+                        #     self.data_queue.put(floats)
 
                         self.log_frequency(self.recv_timestamps, "Listener", "recv_counter")
                         if self.verbose:
@@ -274,6 +277,7 @@ class SerialCommunicator:
     def stop(self):
         self.running = False
         self.ser.close()
+
 
     def set_data_to_send(self, new_data):
         with self._lock:
